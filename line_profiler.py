@@ -10,6 +10,7 @@ try:
     from cStringIO import StringIO
 except ImportError:
     from io import StringIO
+import csv
 import functools
 import inspect
 import linecache
@@ -165,8 +166,11 @@ class LineProfiler(CLineProfiler):
 
         return nfuncsadded
 
+_COLUMN_HEADINGS = ('Line #', 'Hits', 'Time', 'Per Hit', '% Time', 'Line Contents')
 
-def show_func(filename, start_lineno, func_name, timings, unit, stream=None, stripzeros=False):
+
+def show_func(filename, start_lineno, func_name, timings, unit, csv_writer,
+              stream=None, stripzeros=False):
     """ Show results for a single function.
     """
     if stream is None:
@@ -206,8 +210,7 @@ def show_func(filename, start_lineno, func_name, timings, unit, stream=None, str
             '%5.1f' % (100*time / total_time))
     linenos = range(start_lineno, start_lineno + len(sublines))
     empty = ('', '', '', '')
-    header = template % ('Line #', 'Hits', 'Time', 'Per Hit', '% Time',
-        'Line Contents')
+    header = template % _COLUMN_HEADINGS
     stream.write("\n")
     stream.write(header)
     stream.write("\n")
@@ -215,21 +218,31 @@ def show_func(filename, start_lineno, func_name, timings, unit, stream=None, str
     stream.write("\n")
     for lineno, line in zip(linenos, sublines):
         nhits, time, per_hit, percent = d.get(lineno, empty)
-        txt = template % (lineno, nhits, time, per_hit, percent,
-                          line.rstrip('\n').rstrip('\r'))
+        column_vals = (lineno, nhits, time, per_hit, percent,
+                       line.rstrip('\n').rstrip('\r'))
+        txt = template % column_vals
         stream.write(txt)
         stream.write("\n")
+        csv_writer.writerow((func_name, start_lineno, '%g' % (total_time * unit), unit, )
+                            + column_vals)
     stream.write("\n")
 
-def show_text(stats, unit, stream=None, stripzeros=False):
+
+def show_text(stats, unit, stream=None, stripzeros=False, filename='lprof'):
     """ Show text for the given timings.
     """
     if stream is None:
         stream = sys.stdout
 
-    stream.write('Timer unit: %g s\n\n' % unit)
-    for (fn, lineno, name), timings in sorted(stats.items()):
-        show_func(fn, lineno, name, stats[fn, lineno, name], unit, stream=stream, stripzeros=stripzeros)
+    with open('%s.csv' % filename, 'w') as csv_outfile:
+        csv_writer = csv.writer(csv_outfile)
+        csv_writer.writerow(('function', 'function start line', 'function total time', 'unit', ) +
+                            _COLUMN_HEADINGS)
+
+        stream.write('Timer unit: %g s\n\n' % unit)
+        for (fn, lineno, name), timings in sorted(stats.items()):
+            show_func(fn, lineno, name, stats[fn, lineno, name], unit,
+            stream=stream, stripzeros=stripzeros, csv_writer=csv_writer)
 
 @magics_class
 class LineProfilerMagics(Magics):
@@ -381,7 +394,7 @@ def main():
     if len(args) != 1:
         parser.error("Must provide a filename.")
     lstats = load_stats(args[0])
-    show_text(lstats.timings, lstats.unit)
+    show_text(lstats.timings, lstats.unit, filename=args[0])
 
 if __name__ == '__main__':
     main()
